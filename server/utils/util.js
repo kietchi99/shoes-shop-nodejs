@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer'
 import bcrypt from 'bcrypt'
 import Product from '../models/product.js'
 import User from '../models/user.js'
+import Review from '../models/review.js'
 import Otp from '../models/otp.js'
 
 const sendMail = async (email) => {
@@ -36,7 +37,7 @@ const hashPassword = async (password) => {
     password = await bcrypt.hash(password, salt)
     return password
 }
-const makePipeline = async (query, { page, keyword, color, brand, category }) =>{
+const makePipelineProduct = async (query, { page, keyword, color, brand, category }) =>{
     //search
     if (keyword){
         query.push({
@@ -120,4 +121,53 @@ const handleSize = (data) =>{
     return sizes
 } 
 
-export { sendMail, hashPassword, makePipeline, handleSize, handleColor }
+const makePipelineReview = async ({ keyword, page }) => {
+    let query = [
+        {
+            $lookup: {
+                from: 'products', 
+                localField: 'product', 
+                foreignField: '_id', 
+                as: 'product'
+            }
+        },
+        {
+            $lookup: {
+                from: 'users', 
+                localField: 'user', 
+                foreignField: '_id', 
+                as: 'user'
+            }
+        }
+    ]
+
+    //search
+    if(keyword){
+        query.push({
+            $match: { 
+                $or :[
+                    { title : { $regex: keyword, $options: 'i'}},
+                    { content : { $regex: keyword, $options: 'i'}},
+                    { createdAt : { $regex: keyword, $options: 'i'}},
+                    { 'user.fullName' : { $regex: keyword, $options: 'i'}},
+                    { 'product.productName' : { $regex: keyword, $options: 'i'}},
+                ]
+            }
+        })
+    }
+    //paginate
+    let total = 0
+    total =  await Review.aggregate(query)
+    total = total.length
+    page = (page)?parseInt(page):1
+    let perPage = 1;
+    let skip = (page-1) * perPage;
+    let totalPage = Math.ceil(total/perPage)
+    
+    query.push({ $skip: skip })
+    query.push({ $limit: perPage })
+
+    return { query, totalPage, page }
+}
+
+export { sendMail, hashPassword, makePipelineProduct, handleSize, handleColor, makePipelineReview }
