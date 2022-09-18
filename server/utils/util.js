@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer'
 import bcrypt from 'bcrypt'
+import Product from '../models/product.js'
 import User from '../models/user.js'
 import Otp from '../models/otp.js'
 
@@ -35,5 +36,88 @@ const hashPassword = async (password) => {
     password = await bcrypt.hash(password, salt)
     return password
 }
+const makePipeline = async (query, { page, keyword, color, brand, category }) =>{
+    //search
+    if (keyword){
+        query.push({
+            $match: { 
+                $or :[
+                    { productName : { $regex: keyword, $options: 'i'}},
+                    { brand : { $regex: keyword, $options: 'i'}},
+                    { sku : { $regex: keyword, $options: 'i'}}
+                ]
+            }
+        })
+    }
+    //filter
+    if (color){
+        if (color.includes(',')){
+            color = color.split(',')
+            query.push({ $match: { color: { $in: color } } })
+        }else {
+            query.push({ $match: {color: color} })
+        }
+    }
+    if (brand){
+        if (brand.includes(',')){
+            brand = brand.split(',')
+            query.push({ $match: {brand: { $in: brand } } })
+        }else{
+            query.push({ $match: {brand: brand }} )
+        }
+    }
+    if (category){
+        if (category.includes(',')){
+            category = category.split(',')
+            query.push({ $match: {categories: {$in: category }} })
+        }else {
+            query.push({ $match: {categories: category }})
+        }
+    }
+    // pagination
+    let total = 0
+    if (query.length > 0) {
+        total =  await Product.aggregate(query)
+        total = total.length
+    }else{
+        total =  await Product.countDocuments(query)
+    }
+    page = (page)?parseInt(page):1
+    let perPage = 4;
+    let skip = (page-1) * perPage;
+    let totalPage = Math.ceil(total/perPage)
+    
+    query.push({ $skip: skip })
+    query.push({ $limit: perPage })
 
-export { sendMail, hashPassword }
+    return { query, totalPage, page }
+}
+
+const handleColor = (sku) => {
+    const colorCode = sku.slice(sku.indexOf('-') + 1)
+    const listColors = {
+        '10': 'red',
+        '11': 'blue',
+        '12': 'black',
+        '13': 'white',
+        '14': 'yellow',
+        '15': 'orange',
+        '16': 'grey',
+        '17': 'brown',
+        '18': 'multi',
+        '19': 'purple'
+    }
+    return listColors[colorCode]
+}
+
+const handleSize = (data) =>{
+    const sizes = {}
+    for (let key in data) {
+        if (key.includes('size') && (Number(data[key]) !== 0)){
+            sizes[Number(key.slice(-2))] = Number(data[key])
+        }
+    }
+    return sizes
+} 
+
+export { sendMail, hashPassword, makePipeline, handleSize, handleColor }
