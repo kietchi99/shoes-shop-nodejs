@@ -11,6 +11,7 @@ router.put('/reset-password', userController.resetPassword)
 router.get('', userController.getAllusers)
 router.put('/profile/:id/edit', userController.updateProfile)
 router.put('/forgot-password', userController.forgotPassword)
+router.get('/sign-out', userController.signOut)
 
 
 
