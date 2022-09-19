@@ -1,16 +1,32 @@
-
 import Product from '../models/product.js'
-import { makePipeline, handleColor, handleSize } from '../utils/util.js'
+import Review from '../models/review.js'
+import User from '../models/user.js'
+import { makePipelineProduct, handleColor, handleSize } from '../utils/util.js'
 
 const productControllers = {
 
     // [GET] api/products/:category/getbycategory 
     // get a product by category 
     getProductByCategory: async (req, res) => {
+
         try{
-            const products = await Product.find({categories: req.params.category})
-            if (!products) throw "Không tìm thấy sản phẩm"
-            res.status(200).json({status: 'Success', message: 'Lấy danh sách sản phẩm thành công', data: products})
+            let query = [
+                { $match: { categories: req.params.category}}
+            ]
+            //Tạo query pagination và filter and search 
+            const result = await makePipelineProduct(query, req.query )
+            console.log(query)
+            const products = await Product.aggregate(result.query)
+            if (products.length === 0) res.status(200).json({status: 'Success', message: 'Không có sản phẩm nào'})
+            res.status(200).json({
+                status: 'Success', 
+                message: 'Lấy dữ liệu thành công', 
+                data: {
+                    products, 
+                    totalPage: result.totalPage,  
+                    currentPage: result.page
+                }
+            })
         }catch(err){
             res.status(500).json({status: 'Error', message: err})
         }
@@ -21,9 +37,21 @@ const productControllers = {
     getProductBySku: async (req, res) => {
         try{
             const products = await Product.find({sku: req.params.sku})
+                .populate(
+                    {
+                        path: 'reviews', 
+                        model: Review,
+                        select: ['title', 'content', 'star', 'user', 'createdAt'],
+                        populate: {
+                            path: 'user',
+                            Model: User
+                        }
+                    } 
+                )
             if (!products) throw "Không tìm thấy sản phẩm"
             res.status(200).json({status: 'Success', message: 'Lấy sản phẩm thành công', data: products})
         }catch(err){
+            console.log(err)
             res.status(500).json({status: 'Error', message: err})
         }
     },
@@ -43,7 +71,11 @@ const productControllers = {
             const color = handleColor(sku)
             //handle sizes
             const sizes = handleSize(req.body)
-            
+            //total
+            let total = 0
+            for (const key in sizes) {
+                total += sizes[key]
+            }
             const product = await Product.create({ 
                 productName,
                 brand,
@@ -55,7 +87,8 @@ const productControllers = {
                 categories, 
                 color, 
                 price,
-                currentPrice: price
+                currentPrice: price,
+                total
             })
             res.status(200).json({status: 'Success', message: 'Thêm sản phẩm thành công', data: product})
         }catch(err){
@@ -91,7 +124,7 @@ const productControllers = {
                 )
             }
             //Tạo query pagination và filter and search 
-            const result = await makePipeline(query, req.query )
+            const result = await makePipelineProduct(query, req.query )
 
             const products = await Product.aggregate(result.query)
             if(products.length ===0) throw "Không tìm thấy sản phẩm"
@@ -134,7 +167,7 @@ const productControllers = {
             ]
             
             //Tạo query pagination và filter and search 
-            const result = await makePipeline(query, req.query )
+            const result = await makePipelineProduct(query, req.query )
 
             const discountProducts = await Product.aggregate(result.query)
             if (discountProducts.length === 0) res.status(200).json({status: 'Success', message: 'Không có sản phẩm nào'})
@@ -180,7 +213,7 @@ const productControllers = {
             ]
 
             //Tạo query pagination và filter and search 
-            const result = await makePipeline(query, req.query )
+            const result = await makePipelineProduct(query, req.query )
 
             query = result.query
             const totalPage = result.totalPage
@@ -212,6 +245,12 @@ const productControllers = {
         const color = handleColor(sku)
         //handle size
         const sizes = handleSize(req.body)
+        //total
+        let total = 0
+        for (const key in sizes) {
+            total += sizes[key]
+        }
+        console.log(total)
         try{
             await Product.updateOne(
                 { id }, 
@@ -219,13 +258,14 @@ const productControllers = {
                     productName, 
                     brand,
                     sku,
-                    categories,
+                    categories: ['male', 'female'],
                     describe,
                     discount,
                     price,
                     status,
                     color,
-                    sizes
+                    sizes,
+                    total
                 }) 
 
             res.status(200).json({status: 'Success', message: 'Cập nhật thành công'})
