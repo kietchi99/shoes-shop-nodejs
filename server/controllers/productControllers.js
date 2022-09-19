@@ -362,11 +362,38 @@ const productControllers = {
             console.log (err)
             res.status(500).json({status: 'Error', message: err})
         }
-    }
-
-
+    },
 
     //update cart
+    //[PUT] api/products/:id/updatecart
+    updateCart: async (req, res) => {
+        try{
+            const id  = req.params.id
+            const { size, action } = req.query
+            const { user } = await currentUser(req.cookies.user)
+
+            if(user) {// Trường hợp đăng nhập
+                const cart = user.cart
+                const item = cart.find(item => item.product.equals(id) && item.size===size)
+                if(action === 'add') item.qty++
+                else if (action === 'subtract') item.qty--
+                else throw "hành động không hợp lệ"
+                user.save()
+            }else { // Trường không hợp đăng nhập
+                const cart = req.session.cart
+                const index = cart.findIndex(item => item.product===id && item.size===size)
+                console.log(index)
+                if(action === 'add') {cart[index].qty++; console.log(cart)}
+                else if (action === 'subtract') cart[index].qty--
+                else throw "hành động không hợp lệ"
+                res.status(200).json({status: 'Success', message: 'cập nhật thành công', data: cart})
+            }
+        }catch(err) {
+            console.log(err)
+            res.status(500).json({status: 'Error', message: err})
+        }  
+    }
+    //delete cart
     //get cart
 
 }
