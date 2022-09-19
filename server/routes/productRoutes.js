@@ -13,6 +13,8 @@ router.get('/topbuy', productController.getTopBuyProducts)
 router.put('/:id/edit', productController.updateProduct)
 router.get('/nodiscount', productController.getNoDiscountProducts)
 router.put('/updateDiscount', productController.updateDiscount)
+router.put('/updateAvatar', productController.updateAvatar)
+router.put('/updateImages', productController.updateImages)
 
 
 export default router
