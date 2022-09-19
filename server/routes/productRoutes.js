@@ -16,5 +16,8 @@ router.put('/updateDiscount', productController.updateDiscount)
 router.put('/updateAvatar', productController.updateAvatar)
 router.put('/updateImages', productController.updateImages)
 
+router.post('/:id/:size/addtocart', productController.addToCart)
+router.put('/:id/updatecart', productController.updateCart)
+router.get('/getcart', productController.getCart)
 
 export default router
