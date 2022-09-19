@@ -1,7 +1,9 @@
+import mongoose from 'mongoose'
+const toId = mongoose.Types.ObjectId
 import Product from '../models/product.js'
 import Review from '../models/review.js'
 import User from '../models/user.js'
-import { makePipelineProduct, handleColor, handleSize } from '../utils/util.js'
+import { makePipelineProduct, handleColor, handleSize, currentUser } from '../utils/util.js'
 
 const productControllers = {
 
@@ -320,7 +322,52 @@ const productControllers = {
         }catch(err) {
             res.status(500).json({status: 'Error', message: err})
         }
+    },
+
+    //add to cart
+    addToCart: async (req, res) => {
+        let {id, size} = req.params
+        try{
+            const { user } = await currentUser(req.cookies.user)
+            let cart = []
+            let index = 0
+            if (user) {// trường đăng nhập
+                cart = user.cart
+                index = cart.findIndex(item => item.product.equals(id) && item.size===size)
+            }else {//chưa đăng nhập
+                if(!req.session.cart) req.session.cart = []
+                cart = req.session.cart
+                index = cart.findIndex(item => item.product === id && item.size === size)
+            }
+            if (cart.length > 0){
+                if (index === -1) {// Trường hợp cart có item nhưng không trùng
+                    cart.push({ 
+                        size,
+                        product: id,
+                        qty: 1
+                    })
+                }else{//Trường hợp trùng item
+                    cart[index].qty++
+                }
+            }else {//Trường hợp cart không có item
+                cart.push({ 
+                    size, 
+                    product: id,
+                    qty: 1
+                })
+            }
+            if(user) await User.updateOne( { _id: user.id }, {cart}) 
+            res.status(200).json({status: 'Success', message: 'Thêm giỏ hàng thành công'})
+        }catch (err) {
+            console.log (err)
+            res.status(500).json({status: 'Error', message: err})
+        }
     }
+
+
+
+    //update cart
+    //get cart
 
 }
 
