@@ -10,8 +10,9 @@ const reviewControllers = {
     // get all reviews by page
     getAllReviews: async (req, res) => {
         try{
-            const { query, totalPage, page } = await makePipelineReview(req.query)
-            console.log(query)
+            const { query, totalPage, currentPage, err} = await makePipelineReview(req.query)
+            if (err) throw 'Lỗi truy vấn cơ sở dữ liệu'
+
             const reviews = await Review.aggregate(query)
             if(reviews.length ===0) throw "Không có đánh giá nào"
 
@@ -20,8 +21,8 @@ const reviewControllers = {
                 message: 'Lấy dữ liệu thành công', 
                 data: {
                     reviews, 
-                    totalPage: totalPage,  
-                    currentPage: page
+                    totalPage,  
+                    currentPage
                 }
             })
         }catch(err){
@@ -81,9 +82,11 @@ const reviewControllers = {
 
     getReviewByStatus: async (req, res) => {
         try{
-            const { query, totalPage, page } = await makePipelineReview(req.query)
+            const { query, totalPage, currentPage, err } = await makePipelineReview(req.query)
+            if (err) throw 'Lỗi truy vấn cơ sở dữ liệu'
+
             query.push({$match: {status: Number(req.params.status)}})
-            console.log(query)
+            
             const reviews = await Review.aggregate(query)
             if(reviews.length ===0) throw "Không có đánh giá nào"
 
@@ -92,17 +95,14 @@ const reviewControllers = {
                 message: 'Lấy dữ liệu thành công', 
                 data: {
                     reviews, 
-                    totalPage: totalPage,  
-                    currentPage: page
+                    totalPage,  
+                    currentPage
                 }
             })
         }catch(err){
-            console.log(err)
             res.status(500).json({status: 'Error', message: err})
         }   
     }
-
-    
 }
 
 export default reviewControllers

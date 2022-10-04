@@ -1,23 +1,22 @@
 import mongoose from 'mongoose'
-const toId = mongoose.Types.ObjectId
 import Product from '../models/product.js'
 import Review from '../models/review.js'
 import User from '../models/user.js'
-import { makePipelineProduct, handleColor, handleSize, currentUser } from '../utils/util.js'
+import { makePipelineProduct, handleColor, handleSize, currentUser ,decoded, handleDate} from '../utils/util.js'
+
+const toId = mongoose.Types.ObjectId
 
 const productControllers = {
 
     // [GET] api/products/:category/getbycategory 
     // get a product by category 
     getProductByCategory: async (req, res) => {
-
         try{
             let query = [
                 { $match: { categories: req.params.category}}
             ]
-            //Tạo query pagination và filter and search 
-            const result = await makePipelineProduct(query, req.query )
-            console.log(query)
+            const result = await makePipelineProduct(query, req.query)
+            if(result.err) throw 'Lỗi truy vấn cơ sở dữ liệu' 
             const products = await Product.aggregate(result.query)
             if (products.length === 0) res.status(200).json({status: 'Success', message: 'Không có sản phẩm nào'})
             res.status(200).json({
@@ -26,7 +25,7 @@ const productControllers = {
                 data: {
                     products, 
                     totalPage: result.totalPage,  
-                    currentPage: result.page
+                    currentPage: result.currentPage
                 }
             })
         }catch(err){
@@ -38,7 +37,7 @@ const productControllers = {
     // get a product by sku
     getProductBySku: async (req, res) => {
         try{
-            const products = await Product.find({sku: req.params.sku})
+            const product = await Product.findOne({sku: req.params.sku})
                 .populate(
                     {
                         path: 'reviews', 
@@ -50,8 +49,9 @@ const productControllers = {
                         }
                     } 
                 )
-            if (!products) throw "Không tìm thấy sản phẩm"
-            res.status(200).json({status: 'Success', message: 'Lấy sản phẩm thành công', data: products})
+            if (!product) throw "Không tìm thấy sản phẩm"
+            res.header("Access-Control-Allow-Origin", "*")
+            res.status(200).json({status: 'Success', message: 'Lấy sản phẩm thành công', data: product})
         }catch(err){
             console.log(err)
             res.status(500).json({status: 'Error', message: err})
@@ -105,7 +105,7 @@ const productControllers = {
             let sort = req.query.sort
             let query = []
             // sort 
-            if (sort) {
+            if (sort && sort!=='Mặc định') {
                 query.push(
                     {$project: {
                         productName: 1, 
@@ -121,14 +121,15 @@ const productControllers = {
                     }}, 
                     { $sort: {
                         productName: 1,
-                        currentPrice: (sort.slice(sort.indexOf('|') + 1 ) === 'asc')?1:-1
+                        currentPrice: (sort === 'asc')?1:-1
                     } }
                 )
             }
             //Tạo query pagination và filter and search 
-            const result = await makePipelineProduct(query, req.query )
-
+            const result = await makePipelineProduct(query, req.query)
+            if(result.err) throw 'Lỗi truy vấn cơ sở dữ liệu' 
             const products = await Product.aggregate(result.query)
+            
             if(products.length ===0) throw "Không tìm thấy sản phẩm"
             res.status(200).json({
                 status: 'Success', 
@@ -136,11 +137,10 @@ const productControllers = {
                 data: {
                     products, 
                     totalPage: result.totalPage,  
-                    currentPage: result.page
+                    currentPage: result.currentPage
                 }
             })
         }catch(err){
-            console.log(err)
             res.status(500).json({status: 'Error', message: err})
         }
     },
@@ -153,6 +153,7 @@ const productControllers = {
             const keyword = sku.slice(0, sku.indexOf('-') +1 ) // Lấy mã sản phẩm
             let products = await Product.find({sku: {$regex: keyword}})
             if(products) products = products.filter(product => product.sku !== sku)
+            res.header("Access-Control-Allow-Origin", "*")
             res.status(200).json({status: 'Success', message: 'Lấy dữ liệu thành công', data: products})
         }catch(err){
             res.status(500).json({status: 'Error', message: err})
@@ -171,15 +172,15 @@ const productControllers = {
             //Tạo query pagination và filter and search 
             const result = await makePipelineProduct(query, req.query )
 
-            const discountProducts = await Product.aggregate(result.query)
-            if (discountProducts.length === 0) res.status(200).json({status: 'Success', message: 'Không có sản phẩm nào'})
+            const products = await Product.aggregate(result.query)
+            if (products.length === 0) res.status(200).json({status: 'Success', message: 'Không có sản phẩm nào'})
             res.status(200).json({
                 status: 'Success', 
                 message: 'Lấy dữ liệu thành công', 
                 data: {
-                    discountProducts, 
+                    products, 
                     totalPage: result.totalPage,  
-                    currentPage: result.page
+                    currentPage: result.currentPage
                 }
             })
         }catch(err){
@@ -192,16 +193,22 @@ const productControllers = {
     totalProducts: async (req, res) => {
         try{
             let totalProducts = 0
-            // count users goup by month and year
             if(req.query.month && req.query.year) {
-                totalProducts = await Product.aggregate([{$match: {}}, {$group: {id: {$dateToString: {"date": "$createdAt","format": "%Y-%m"}},Count: {$sum: 1},}}])
-                totalProducts = totalProducts[0].Count
-            //count all users
+                const {start, end} = handleDate(req.query.month, req.query.year)
+                totalProducts = await Product.aggregate([
+                    {$match: {createdAt: {$gte: start, $lte: end } }}, 
+                    {
+                        $group: {_id: {$dateToString: {"date": "$createdAt","format": "%Y-%m"}},
+                        Count: {$sum: 1}}
+                    }
+                ])
+                totalProducts = totalProducts.length === 0 ? 0 : totalProducts[0].Count
             }else{ 
                 totalProducts = await Product.countDocuments({})
             }
             res.status(200).json({status: 'Success', message: 'Lấy dữ liệu thành công', data: totalProducts})
         }catch(err){
+            console.log(err)
             res.status(500).json({status: 'Error', message: err})
         }
     },
@@ -210,27 +217,16 @@ const productControllers = {
     // get top buy products
     getTopBuyProducts: async (req, res) => {
         try{
-            let query = [
-                { $sort : { sold : -1 }}
-            ]
-
-            //Tạo query pagination và filter and search 
-            const result = await makePipelineProduct(query, req.query )
-
-            query = result.query
-            const totalPage = result.totalPage
-            const page = result.page
-
-            const TopBuyProducts = await Product.aggregate(query)
-            if (TopBuyProducts.length === 0) res.status(200).json({status: 'Success', message: 'Không có sản phẩm nào'})
+            const products = await Product.aggregate([
+                { $sort : { sold : -1 }},
+                { $limit: 6}
+                
+            ])
+            if (products.length === 0) res.status(200).json({status: 'Success', message: 'Không có sản phẩm nào'})
             res.status(200).json({
                 status: 'Success', 
                 message: 'Lấy dữ liệu thành công', 
-                data: {
-                    TopBuyProducts, 
-                    totalPage,  
-                    currentPage: page
-                }
+                data: {products}
             })
         }catch(err){
             console.log(err)
@@ -276,7 +272,6 @@ const productControllers = {
         }
     },
 
-    //get all products
     //[GET] api/products/nodiscount 
     getNoDiscountProducts: async (req, res) => {
         try{
@@ -377,14 +372,18 @@ const productControllers = {
                 const item = cart.find(item => item.product.equals(id) && item.size===size)
                 if(action === 'add') item.qty++
                 else if (action === 'subtract') item.qty--
+                else if (action ==='remove') {
+                    const index = cart.findIndex(item => item.product.equals(id) && item.size===size)
+                    cart.splice(index, 1)
+                }
                 else throw "hành động không hợp lệ"
                 user.save()
             }else { // Trường không hợp đăng nhập
                 const cart = req.session.cart
                 const index = cart.findIndex(item => item.product===id && item.size===size)
-                console.log(index)
                 if(action === 'add') {cart[index].qty++; console.log(cart)}
                 else if (action === 'subtract') cart[index].qty--
+                else if (action === 'remove') cart.splice(index, 1)
                 else throw "hành động không hợp lệ"
                 res.status(200).json({status: 'Success', message: 'cập nhật thành công', data: cart})
             }
@@ -392,9 +391,50 @@ const productControllers = {
             console.log(err)
             res.status(500).json({status: 'Error', message: err})
         }  
-    }
-    //delete cart
+    },
+
     //get cart
+    //[GET] api/products/getcart
+    getCart: async (req, res) => {
+        try{
+            const {id} = decoded(req.cookies.user)
+            let cart = []
+            if(id) {
+                    const user = await User.findOne({id}).populate('cart.product')
+                    cart = user.cart.map(item=>{
+                        let currentPrice = item.product.price - (item.product.price * (item.product.discount / 100))
+                        let subTotal = currentPrice * item.qty
+                        return {
+                            productName: item.product.productName,
+                            quantity: item.qty,
+                            size: item.size,
+                            price: currentPrice,
+                            subTotal
+                        }
+                    })
+            }else{
+                cart = req.session.cart
+                const ids = cart.map(item => toId(item.product))
+                const products = await Product.find({_id: {$in: ids}})
+                cart = cart.map(item => {
+                    let product = products.find(product => product.id===item.product)
+                    let currentPrice = product.price - (product.price * (product.discount / 100))
+                    let subTotal = currentPrice * item.qty
+                    return {
+                        productName: product.productName,
+                        quantity: item.qty,
+                        size: item.size,
+                        price: currentPrice,
+                        subTotal
+                    }
+                })
+            }
+            res.status(200).json({status: 'Success', message: 'Lấy dữ liệu thành công', data: cart})
+        }catch(err){ 
+            console.log(err)  
+            res.status(500).json({status: 'Error', message: err})
+        } 
+    }
 
 }
 

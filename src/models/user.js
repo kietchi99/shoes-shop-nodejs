@@ -39,37 +39,29 @@ const User = new Schema({
     gender: String,
     phone: String,
     address: String,
-    cart: {
-        items: [{
-            sku: String, 
+    cart: [
+        {
             size: String,
             qty: Number,
-            product: String,
-            price: {
-                base: Number, 
-                discount: Number
-            },
-            subTotal: Number
-        }],
-        totalItems: {type: Number, default: 0}
-    }
+            product: { type: mongoose.Types.ObjectId, ref: 'product', required: true },
+        }
+    ]
 },  { timestamps: true })
 
 // Mã hóa mật khẩu trước khi lưu
-User.pre('save', async function(next) {
+/*User.pre('save', async function(next) {
     const salt = await bcrypt.genSalt()
     this.password = await bcrypt.hash(this.password, salt)
     next()
 })
+*/
 
 //xác thực tài khoản
 User.statics.login = async function(key, password) {
     const user = await this.findOne(key)
-    console.log(password)
     try{
         if (user) {
             const pass = await bcrypt.compare(password, user.password)
-            console.log(pass)
             if (pass) {
                 return {user}
             }else {

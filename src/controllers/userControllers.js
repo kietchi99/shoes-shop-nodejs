@@ -1,8 +1,11 @@
 import jwt from 'jsonwebtoken'
+import _ from 'lodash'
 import bcrypt from 'bcrypt'
 import User from '../models/user.js'
-import { sendMail, hashPassword } from '../utils/util.js'
+import { sendMail, hashPassword, handleDate, paginate } from '../utils/util.js'
 import Otp from '../models/otp.js'
+import Product from '../models/product.js'
+
 
 const userControllers = {
     //get curent user 
@@ -36,7 +39,9 @@ const userControllers = {
     //create a new user
     signUp: async (req, res) => {
         try{
-            const user = await User.create(req.body)
+            const password = await hashPassword(req.body.password)
+            const infor = _.omit(req.body, password)
+            const user = await User.create({ ...infor, password })
             res.status(200).json({status: 'Success', message: 'Người dùng mới được tạo', data: user.fullName})
         }catch(err){
             res.status(500).json({status: 'Error', message: err})
@@ -55,46 +60,44 @@ const userControllers = {
                 const maxAge = 3 * 24 * 60 * 60
                 const token = jwt.sign({id}, process.env.JWT_SECRECT, {expiresIn: maxAge})
                 res.cookie('user', token, {httpOnly: true, maxAge: maxAge * 1000})
-                /*
-                let cartTemp = req.session.cart
-                if (cartTemp.items.length > 0) {
-                    const user = await User.findOne({_id: id})
-                    if(user.cart.items.length > 0){
-                        user.cart.totalItems += cartTemp.totalItems
-                        cartTemp.items.forEach(async element => {
-                            const index = user.cart.items.findIndex(item => element.sku===item.sku && element.size === item.size)
+                if(!req.session.cart) req.session.cart = []
+                if (req.session.cart.length > 0) {// trường hợp session cart có item
+                    let cartTemp = req.session.cart
+                    if(user.cart.length > 0){ // trường hợp user cart có item
+                        cartTemp.forEach(async element => {
+                            const index = user.cart.findIndex(item => item.product.equals(element.product) && item.size===element.size )
                             if (index === -1) {
-                                let product = await Product.findOne({ sku: element.sku }) 
-                                user.cart.items.push({ 
-                                    sku: element.sku, 
+                                user.cart.push({ //trùng hợp không trùng item
                                     size: element.size,
-                                    product: product.productName,
+                                    product: element.product,
                                     qty: 1
                                 })
-                                await User.updateOne( { _id: id }, {cart: user.cart})
-                            }else{
-                                user.cart.items[index].qty++
-                                await User.updateOne( { _id: id }, {cart: user.cart})
+                                await user.save()
+                            }else{// trường hợp trùng item
+                                user.cart[index].qty++
+                                await user.save()
                             }
                         })
-                        req.session.cart = {
-                            totalItems: 0,
-                            items: []
-                        }
-                        }else {
-                            await User.updateOne({_id: id}, {cart: cartTemp})
-                            req.session.cart = {
-                                totalItems: 0, 
-                                items: []
-                            }
-                        }
-                }*/
-            }else throw err
+                        req.session.cart = []
+                    }else {// trường hợp user cart không có item
+                        user.cart = cartTemp
+                        await user.save()
+                        req.session.cart = []
+                    }
+                }
+            }else throw 'Chưa đăng nhập'
             res.status(200).json({status: 'Success', message: 'Đăng nhập thành công', data: user.fullName})
         }catch(err){
+            console.log(err)
             res.status(500).json({status: 'Error', message: err})
         }
     },
+    //sign out
+    //[GET] api/users/sign-out
+    signOut: (req, res) => {
+        res.cookie('user', '', {maxAge: 1})
+    }
+    ,
     //[GET] api/user/:id/getbyid  
     //get a user by id
     getUserById: async (req, res) => {
@@ -113,10 +116,10 @@ const userControllers = {
     getAllusers: async (req, res) => {
         try {
             let { keyword, page } = req.query
-            const query = []
+            let tempQuery = []
             //search
             if (keyword){
-                query.push({
+                tempQuery.push({
                     $match: {$or: [
                         {fullName : { $regex: keyword, $options: 'i'}}, 
                         {email : { $regex: keyword, $options: 'i' }}
@@ -124,34 +127,19 @@ const userControllers = {
                 })
             }
             // pagination
-            let total = 0
-
-
-            if (query.length > 0) {
-                total =  await User.aggregate(query)
-                total = total.length
-            }else{
-                total =  await User.countDocuments(query)
-            }
-
-
-            page = (page)?parseInt(page):1
-            let perPage = 1;
-            let skip = (page-1) * perPage;
-            let totalPage = Math.ceil(total/perPage)
-        
-            query.push({ $skip: skip })
-            query.push({ $limit: perPage })
-
+            const { query, totalPage, currentPage, err }  = await paginate(tempQuery, User, page)
+            if (err) throw 'Lỗi truy vấn cơ sở dữ liệu'
+            
             const Users = await User.aggregate(query)
             res.status(200).json({ 
                 status: 'Success', 
                 message: 'Lấy dữ liệu thành công', 
                 data: Users, 
-                meta: { totalPage,  currentPage: page} 
+                meta: { totalPage,  currentPage} 
             })
         }catch(err){
-            res.status(400).json({status: 'Error', message: err.message })
+            console.log(err)
+            res.status(400).json({status: 'Error', message: err })
         }
 
     },
@@ -259,17 +247,23 @@ const userControllers = {
     //total users
     totalUsers: async (req, res) => {
         try{
-            let totalUser = 0
-            // count users goup by month and year
+            let totalUsers = 0
             if(req.query.month && req.query.year) {
-                totalUser = await User.aggregate([{$match: {}}, {$group: {id: {$dateToString: {"date": "$createdAt","format": "%Y-%m"}},Count: {$sum: 1},}}])
-                totalUser = totalUser[0].Count
-            //count all users
+                const {start, end} = handleDate(req.query.month, req.query.year)
+                totalUsers = await User.aggregate([
+                    {$match: {createdAt: {$gte: start, $lte: end } }}, 
+                    {
+                        $group: {_id: {$dateToString: {"date": "$createdAt","format": "%Y-%m"}},
+                        Count: {$sum: 1}}
+                    }
+                ])
+                totalUsers = totalUsers.length === 0 ? 0 : totalUsers[0].Count
             }else{ 
-                totalUser = await User.countDocuments({})
+                totalUsers = await User.countDocuments({})
             }
-            res.status(200).json({status: 'Success', message: 'Lấy dữ liệu thành công', data: totalUser})
+            res.status(200).json({status: 'Success', message: 'Lấy dữ liệu thành công', data: totalUsers})
         }catch(err){
+            console.log(err)
             res.status(500).json({status: 'Error', message: err})
         }
     }
