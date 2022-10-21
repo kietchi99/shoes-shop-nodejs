@@ -1,80 +1,77 @@
 import mongoose from 'mongoose'
 import validator from 'validator'
 import bcrypt from 'bcrypt'
-import jwt from 'jsonwebtoken'
+
 const Schema = mongoose.Schema
 
 const User = new Schema({
     fullName: {
         type: String,
-        required: true
+        required: [true, 'Tên không được bỏ trống']
     }, 
-    useName: {
-        type: String,
-        lowercase: true
-    },
     email: {
         type: String, 
-        required: true,
+        require: [true, 'Email không được bỏ trống'],
         unique: true,
         lowercase: true,
-        validate: validator.isEmail
+        validate: [validator.isEmail, 'Email không hợp lệ']
     },
     password: {
         type: String, 
-        required: true,
-        minLength: 8    
+        require: [true, 'Mật khẩu không được bỏ trống'],
+        minLength: 8,
+        select: false    
     },
-    avatar: {type: String},
+    passwordConfirm: {
+        type: String, 
+        required: [true, 'Hãy xác nhận mật khẩu'],
+        validate: {
+            //save
+            validator: function(val) {
+                return val === this.password;
+            },
+            message: 'Mật khẩu không khớp'
+        }
+    },
+    photo: {
+        type: String,
+        default: 'default.png',
+    },
     status: {
-        type: String,
-        required: true,
-        default: "active"
+        type: Number,
+        default: 1
     },
-    type: {
+    role: {
         type: String,
-        required: true,
+        enum: ['customer', 'admin'],
         default: "customer"
     },
-    gender: String,
     phone: String,
-    address: String,
-    cart: [
-        {
-            size: String,
-            qty: Number,
-            product: { type: mongoose.Types.ObjectId, ref: 'product', required: true },
-        }
-    ]
+    address: String
 },  { timestamps: true })
 
 // Mã hóa mật khẩu trước khi lưu
-/*User.pre('save', async function(next) {
+User.pre('save', async function(next) {
+    if(!this.isModified('password')) return next()
     const salt = await bcrypt.genSalt()
     this.password = await bcrypt.hash(this.password, salt)
+    this.passwordConfirm = undefined;
     next()
 })
-*/
 
-//xác thực tài khoản
-User.statics.login = async function(key, password) {
-    const user = await this.findOne(key)
-    try{
-        if (user) {
-            const pass = await bcrypt.compare(password, user.password)
-            if (pass) {
-                return {user}
-            }else {
-                throw 'Mật khẩu không đúng'
-            }
-        }else{
-            throw 'Email không đúng'
-        }
-    }catch(err) {
-        return {err}
-    }
-    
+User.methods.correctPassword = async function (DBpassword, userPassword){
+    return await bcrypt.compare(DBpassword, userPassword)
 }
 
+User.methods.changedPasswordAfter = function (JWTTime){
+    if(this.passwordChangedAt) {
+        const changedTimestamp = parseInt(
+            this.passwordChangedAt.getTime() / 1000,
+            10
+        )
+        return JWTTime < changedTimestamp
+    }
+    return false
+}
 export default  mongoose.model('user', User)
 
