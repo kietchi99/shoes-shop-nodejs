@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import User from '../models/user.js';
 import catchAsync from '../utils/catchAsync.js'
 import AppError from '../utils/appError.js'
+import util from 'util'
 
 //sign token
 const signToken = id => {
@@ -56,4 +57,33 @@ export const logIn = catchAsync(async(req, res, next)=>{
     if(!user || !correct) return next(new AppError('Email hoặc mật khẩu không đúng', 400))
 
     createAndSendToken(user, 200, res)
+})
+
+
+// protect
+export const protect = catchAsync(async(req, res, next) => {
+    let token; 
+    if(
+        req.headers.authorization &&
+        req.headers.authorization.startsWith("Bearer")
+    ) {
+        token = req.headers.authorization.split(' ')[1]
+    }
+    if(!token) {
+        return next(new AppError('Bạn chưa đăng nhập', 401))
+    }
+
+    const decoded = await util.promisify(jwt.verify)(token, process.env.JWT_SECRECT)
+    
+    const currentUser = await User.findById(decoded.id)
+    if (!currentUser || currentUser.status === 0) {
+        return next(new AppError('Người dùng không tồn tại', 404))
+    } 
+
+    if(currentUser.changedPasswordAfter(decoded.iat)) {
+        return next(new AppError('Mật khẩu vừa mới thay đổi, hãy đăng nhập lại', 401))
+    }
+
+    req.user = currentUser
+    next()
 })
