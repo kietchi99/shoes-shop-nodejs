@@ -1,12 +1,33 @@
 import express from 'express'
-const router = express.Router()
-import reviewController from '../controllers/reviewControllers.js'
+import {
+    getAllReviews,
+    updateReview,
+    addReview,
+    deleteReview
+} from '../controllers/reviewControllers.js'
+import { protect, restrictTo } from '../controllers/authControllers.js'
 
-router.get('', reviewController.getAllReviews)
-router.put('/:id/update', reviewController.updateReview)
-router.post('/:id/add', reviewController.addReview)
-router.delete('/:id/remove', reviewController.removeReview)
-router.get('/:status/getbystatus', reviewController.getReviewByStatus)
+const router = express.Router()
+
+// Add a review
+// Private
+// Customer
+router.post('/products/:id', protect, restrictTo("customer"), addReview)
+
+// Update review
+// Private
+// Customer
+router.patch('/:id', protect, restrictTo("customer"), updateReview)
+
+// Get all reviews
+// Private
+// Admin
+router.get('/', protect, restrictTo("admin"), getAllReviews)
+
+// delete review
+// Private
+// Admin && customer
+router.delete('/:id', protect, restrictTo("admin", "customer"), deleteReview)
 
 
 
