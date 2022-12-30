@@ -51,14 +51,7 @@ const handleInputProduct = (body) => {
 const filterObj = (obj, ...allowedFields) => {
     const newObj = {}
     Object.keys(obj).forEach(val => {
-        if(Array.isArray(obj[val])) {
-            let newImages = []
-            obj[val].forEach((image)=>{
-                if(image) newImages.push(image)
-            })
-            if(newImages.length > 0) newObj[val] = newImages
-        }
-        else if (obj[val] && allowedFields.includes(val)) {
+        if (obj[val] && allowedFields.includes(val)) {
             newObj[val] = obj[val]
         }
     })
@@ -73,7 +66,7 @@ const handleDate = (month, year) => {
     return { start, end }
 }
 
-const makePipelineReview = async ({ keyword, page}, id) => {
+const makePipelineReview = async ({ keyword, page } ) => {
     let query = [
         {
             $lookup: {
@@ -193,12 +186,10 @@ const makePipelineProduct = async({ page, keyword, color, brand, category, sort,
         let query = []
         // discount
         if(discount === 'true') query.push(
-            { $match: { discount: {$gt: 0}} },
-            { $sort: { discount : -1 }}
+            { $match: { discount: {$gt: 0}} }
         )
         //sort
-        if (sort && sort!=='Mặc định') {
-            if(discount === 'true') query.pop()
+        if (sort && sort!=='default') {
             query.push(
                 {
                     $project: {
