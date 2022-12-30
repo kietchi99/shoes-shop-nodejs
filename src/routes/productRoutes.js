@@ -1,22 +1,48 @@
 import express from 'express'
-import productController from '../controllers/productControllers.js'
+import { protect, restrictTo } from '../controllers/authControllers.js'
+import {
+    addProduct,
+    getProductBySku,
+    similarProducts,
+    topBuyProducts,
+    totalProducts,
+    updateProduct,
+    //getProducts,
+    uploadProductImages,
+    resizeProductImages,
+    getAllProductWithPage
+} from '../controllers/productControllers.js'
+
 const router = express.Router()
 
-router.post('/add', productController.addProduct)
-router.get('/:category/getbycategory', productController.getProductByCategory)
-router.get('/:sku/getbysku', productController.getProductBySku)
-router.get('', productController.getAllProductWithPage)
-router.get('/:sku/similar', productController.productSimilar)
-router.get('/discount', productController.getDiscountProduct)
-router.get('/total', productController.totalProducts)
-router.get('/topbuy', productController.getTopBuyProducts)
-router.put('/:id/edit', productController.updateProduct)
-router.get('/nodiscount', productController.getNoDiscountProducts)
-router.put('/updateDiscount', productController.updateDiscount)
-router.put('/updateAvatar', productController.updateAvatar)
-router.put('/updateImages', productController.updateImages)
-router.post('/:id/:size/addtocart', productController.addToCart)
-router.put('/:id/updatecart', productController.updateCart)
-router.get('/getcart', productController.getCart)
+// Get a product by sku
+// Public
+router.get('/sku/:sku', getProductBySku) 
+
+// Get similar products
+// Public
+router.get('/similar/sku/:sku', similarProducts)
+
+// Get top buy products
+// Public
+router.get('/topbuy', topBuyProducts)
+
+// Total products
+// Public
+router.get('/total', totalProducts)
+
+// Get all products
+// Public
+router.get('/', getAllProductWithPage)
+
+// Update product
+// Private
+// Admin
+router.patch('/:id', protect, restrictTo("admin"), uploadProductImages, resizeProductImages, updateProduct)
+
+// Add a product
+// Private
+// Admin
+router.post('/', protect, restrictTo("admin"), addProduct)
 
 export default router
