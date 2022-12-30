@@ -1,108 +1,96 @@
-import mongoose from 'mongoose'
-import Product from '../models/product.js'
 import Review from '../models/review.js'
-import User from '../models/user.js'
-import { makePipelineReview } from '../utils/util.js'
+import { makePipelineReview } from '../utils/index.js'
+import AppError from '../utils/appError.js'
+import catchAsync from '../utils/catchAsync.js'
 
-const reviewControllers = {
+// Get all reviews
+// [GET] api/v1/reviews
+// Private
+// Admin
+export const getAllReviews = catchAsync(async (req, res) => {
+    const { query, totalPage, currentPage } = await makePipelineReview(req.query)
 
-    // [GET] api/reviews?page&&search
-    // get all reviews by page
-    getAllReviews: async (req, res) => {
-        try{
-            const { query, totalPage, currentPage, err} = await makePipelineReview(req.query)
-            if (err) throw 'Lỗi truy vấn cơ sở dữ liệu'
+    const reviews = await Review.aggregate(query)
 
-            const reviews = await Review.aggregate(query)
-            if(reviews.length ===0) throw "Không có đánh giá nào"
-
-            res.status(200).json({
-                status: 'Success', 
-                message: 'Lấy dữ liệu thành công', 
-                data: {
-                    reviews, 
-                    totalPage,  
-                    currentPage
-                }
-            })
-        }catch(err){
-            console.log(err)
-            res.status(500).json({status: 'Error', message: err})
+    res.status(200).json({
+        status: 'Success', 
+        data: {
+            reviews: reviews.length===0 ? 'Chưa có đánh giá nào' : reviews, 
+            totalPage,  
+            currentPage
         }
-    },
+    })
+})
 
-    //[PUT] api/reviews/:id/update 
-    // update a review
-    updateReview: async (req, res) => {
-        try{
-            await Review.updateOne({id: req.params.id}, {status: req.body.status})
-            res.status(200).json({status: 'Success', message: 'Cập nhật thành công'})
-        }catch(err){
-            res.status(500).json({status: 'Error', message: err})
+
+// Update a review
+// [PATCH] api/reviews/:id 
+// Private
+// Customer
+export const updateReview = catchAsync(async (req, res, next) => {
+    const review = await Review.findOneAndUpdate( 
+        {
+            $and:[
+                { _id: req.params.id },
+                { user: req.user.id }
+            ]
+        }, 
+        req.body, 
+        { new: true }
+    )
+
+    if(!review) return next(new AppError('Không tìm thấy đánh giá', 404))
+    
+    res.status(200).json({
+        status: 'Success', 
+        data: {
+            review
         }
-    },
+    })
+})
 
-    //[POST] api/reviews/:id/add 
-    // create a new review
-    addReview: async (req, res) => {
-        const { title, star, content } = req.body
-        const toId = mongoose.Types.ObjectId
-        try{
-            //const user = User.getUser(req.cookies.user)
-            const user = '63252cab9c0f99cf8479900b'
-            const idUser = toId(user)
-            const review = await Review.create( { 
-                title, 
-                star, 
-                content, 
-                product: req.params.id, 
-                user: idUser 
-            })
-            await Product.updateOne({ _id: req.params.id }, {$push: { reviews: review.id } })
-            res.status(200).json({status: 'Success', message: 'Thêm đánh giá thành công'})
-        }catch(err){
-            res.status(500).json({status: 'Error', message: err})
+// Add a new review
+// [POST] api/v1/reviews/:id
+// Private
+// Customer
+export const addReview = catchAsync(async (req, res) => {
+    const newReview = await Review.create( { 
+        ...req.body,
+        product: req.params.id, 
+        user: req.user.id 
+    })
+
+    res.status(201).json({
+        status: 'Success', 
+        data: {
+            newReview
         }
-    },
+    })
+})
 
-    //[DELETE] api/reviews/:id/remove
-    // remove a review
-    removeReview: async (req, res) => {
-        try{
-            await Review.deleteOne({id: req.params.id})
-            res.status(200).json({status: 'Success', message: 'Xóa đánh giá thành công'})
-        }catch(err){
-            console.log(err)
-            res.status(500).json({status: 'Error', message: err})
-        }
-    },
-
-    // [GET] api/review/:status/getbystatus 
-    // get a review by status
-
-    getReviewByStatus: async (req, res) => {
-        try{
-            const { query, totalPage, currentPage, err } = await makePipelineReview(req.query)
-            if (err) throw 'Lỗi truy vấn cơ sở dữ liệu'
-
-            query.push({$match: {status: Number(req.params.status)}})
-            
-            const reviews = await Review.aggregate(query)
-            if(reviews.length ===0) throw "Không có đánh giá nào"
-
-            res.status(200).json({
-                status: 'Success', 
-                message: 'Lấy dữ liệu thành công', 
-                data: {
-                    reviews, 
-                    totalPage,  
-                    currentPage
-                }
-            })
-        }catch(err){
-            res.status(500).json({status: 'Error', message: err})
-        }   
+// [DELETE] api/v1/reviews/:id
+// Delete a review
+// Private
+// Customer
+export const deleteReview = catchAsync(async (req, res) => {
+    let deletedReview
+    if(req.user.role === 'admin') {
+        deletedReview = await Review.findByIdAndDelete(req.params.id)
+    }else if (req.user.role === 'customer') {
+        deletedReview = await Review.findOneAndDelete({
+            $and: [
+                { _id: req.params.id },
+                { user: req.user.id }
+            ]
+        })
     }
-}
 
-export default reviewControllers
+    if(!deletedReview) return next(new AppError('Không tìm thấy đánh giá', 404))
+    
+    res.status(200).json({ 
+        status: 'Success',
+        data: {
+            deletedReview
+        }
+    })
+})
