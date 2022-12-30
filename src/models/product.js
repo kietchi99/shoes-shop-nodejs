@@ -22,7 +22,7 @@ const Product = new Schema({
     describe: String,
     categories: [String],
     reviews: [{ type: mongoose.Types.ObjectId, ref: 'review'}],
-    avatar: String,
+    imageCover: String,
     images: [String],
     sizes: {},
     color: String,
